@@ -1,0 +1,271 @@
+---
+name: Freddy Drennan
+title: Predicting House Prices
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    theme: cerulean
+    highlight: haddock
+    fig_align: center
+---
+
+[__Train__]("http://fdrennan.net/pages/pages2/datasets/housetrain.csv")
+[__Test__]("http://fdrennan.net/pages/pages2/datasets/housetest.csv")
+
+
+<h1>
+Exploring the Data
+</h1>
+
+
+```{r, message = FALSE, warning = FALSE}
+library(ggplot2)
+library(ggthemes)
+library(tidyr)
+library(Amelia)
+library(caTools)
+```
+
+<h2>
+Importing the Data
+</h2>
+
+Use the `read.csv()` function to import the data labeled __Train__. 
+```{r}
+data = read.csv("train.csv")
+
+split = sample.split(data, SplitRatio = 0.7)
+train = subset(data, split == TRUE)
+test  = subset(data, split == FALSE)
+```
+
+<h2>
+Understanding the Data
+</h2>
+
+Here let's see what we're working with. We will use the `str` function to see how the data is structured and understand the classes of data we are working with. First, we can see there is a lot going on here. I'm going to organize the data into types. 
+
+```{r}
+data %>%
+     head(2) %>%
+     str()
+```
+
+Next, I would like to restructure mydata to put numeric data into the beginning of the dataset and factor data to the right side of the dataset. This is just a personal preference.
+```{r}
+classes = data %>%
+     lapply(class) %>%
+     as.character()
+
+```
+
+Next, let's see if there is anything missing in the data. We can do this by calling the `missmap` function from the `Amelia` package.
+
+```{r}
+dim(data)
+missmap(data[,1:30])
+missmap(data[,31:61])
+missmap(data[,61:81])
+```
+
+
+
+So, this isn't a complete dataset. Let's look all the numeric data to see the distributions and then also plot the nummber of missing values.
+```{r}
+par(mfrow = c(2,2))
+for(i in 1:ncol(data)) {
+     if(classes[i] == "integer") {
+           hist(data[,i], 
+               main = paste(names(data)[i], " Col ", i), 
+               breaks = length(unique(data[,1]))/4,
+               xlab = "",
+               ylab = "",
+               sub = paste("Percent Missing: ", round(complete.cases(data[,i])/length(data[,i]), 2)*100, "%"))
+     }
+         else if (classes[i] == "factor") {
+              plot(data[i], main = colnames(data)[i],
+                   sub = paste("Percent Missing: ", round(sum(is.na(data[,i]))/length(data[,i]), 5)*100, "%"))
+         }
+}
+par(mfrow = c(1,1))
+```
+
+```{r}
+
+factorCols  = classes == "factor"
+numericCols = classes == "integer"
+# 
+# data = cbind(data[,numericCols], data[,factorCols])
+
+str(data)
+numericDataTrain = train[numericCols]
+numericDataTest  = test[numericCols]
+
+numericDataTest = numericDataTest[,-c(3, 26)]
+
+trainNumeric = train[numericCols]
+trainNumeric = trainNumeric[, -c(3,26)]
+```
+
+
+```{r}
+theLm = lm(SalePrice ~ ., data = na.omit(numericDataTrain), direction = "back")
+
+summary(theLm)
+
+backwardLm = step(theLm, direction = "backward", trace = FALSE)
+backwardLm
+
+theLm = lm(formula = SalePrice ~ MSSubClass + LotArea + OverallQual + 
+    OverallCond + YearBuilt + YearRemodAdd + MasVnrArea + BsmtFinSF1 + 
+    BsmtFinSF2 + BsmtUnfSF + X1stFlrSF + X2ndFlrSF + BsmtFullBath + 
+    HalfBath + BedroomAbvGr + KitchenAbvGr + TotRmsAbvGrd + Fireplaces + 
+    GarageCars + GarageArea + WoodDeckSF + ScreenPorch + PoolArea + 
+    MiscVal, data = na.omit(numericDataTrain), direction = "back")
+
+summary(theLm)
+theLm = predict(theLm, test)
+```
+
+<h1>
+Running a Random Forest
+</h1>
+
+We will use the stepwise model to run the random forest. The data provided is in a test/train format. However, we need to test the model ourselves. So, we have split the test data up into a test/train and then we will use the actual test data to send the score to kaggle and see how we do. 
+
+```{r}
+library(randomForest)
+
+rf.model = randomForest(formula = SalePrice ~ MSSubClass + LotArea + OverallQual + 
+    OverallCond + YearBuilt + YearRemodAdd + MasVnrArea + BsmtFinSF1 + 
+    BsmtFinSF2 + BsmtUnfSF + X1stFlrSF + X2ndFlrSF + BsmtFullBath + 
+    HalfBath + BedroomAbvGr + KitchenAbvGr + TotRmsAbvGrd + Fireplaces + 
+    GarageCars + GarageArea + WoodDeckSF + ScreenPorch + PoolArea + 
+    MiscVal, data = na.omit(numericDataTrain))
+
+rf.pred = predict(rf.model, numericDataTest)
+
+predictionDataFrame = data.frame(actual = numericDataTest$SalePrice, predicted = mean(rf.pred, theLm))
+
+
+ggplot(predictionDataFrame, aes(x = actual, y = predicted)) +
+     geom_point(cex = .05, colour = "light blue") +
+     theme_solarized(light = FALSE)+
+     xlab("Actual") +
+     ylab("Predicted") +
+     ggtitle(paste("Random Forest using Stepwise Data"), "1")
+
+
+```
+
+Check with Kaggle
+```{r}
+actualTest = read.csv("test.csv")
+
+rf.model = randomForest(formula = SalePrice ~ MSSubClass + LotArea + OverallQual + 
+    OverallCond + YearBuilt + YearRemodAdd + MasVnrArea + BsmtFinSF1 + 
+    BsmtFinSF2 + BsmtUnfSF + X1stFlrSF + X2ndFlrSF + BsmtFullBath + 
+    HalfBath + BedroomAbvGr + KitchenAbvGr + TotRmsAbvGrd + Fireplaces + 
+    GarageCars + GarageArea + WoodDeckSF + ScreenPorch + PoolArea + 
+    MiscVal + Neighborhood + HouseStyle + Exterior1st + Exterior2nd + MasVnrType +
+         ExterQual + Foundation + KitchenQual + SaleCondition, 
+    data = train, na.action = na.omit)
+
+rf.pred = predict(rf.model, actualTest)
+
+rf.pred[is.na(rf.pred)] = mean(na.omit(rf.pred))
+
+sum(is.na(rf.pred))
+
+SalePrice = cbind(Id = actualTest$Id, SalePrice = mean( rf.pred, theLm))
+
+write.csv(SalePrice, "SalePrice1.csv")
+
+head(SalePrice)
+```
+
+The Kaggle Score for the submission above was 0.15724 with a rank at 1739. Lot's of room for improvement, but we've only used half the data! :)
+
+<h1>
+Thinking about Improvements
+</h1>
+
+```{r}
+actualTest = read.csv("test.csv")
+train = train[,-1]
+rf.model = randomForest(formula = SalePrice ~ MSSubClass + LotArea + OverallQual + 
+    OverallCond + YearBuilt + YearRemodAdd + MasVnrArea + BsmtFinSF1 + 
+    BsmtFinSF2 + BsmtUnfSF + X1stFlrSF + X2ndFlrSF + BsmtFullBath + 
+    HalfBath + BedroomAbvGr + KitchenAbvGr + TotRmsAbvGrd + Fireplaces + 
+    GarageCars + GarageArea + WoodDeckSF + ScreenPorch + PoolArea + 
+    MiscVal, data = train, na.action = na.omit)
+rf.model
+rf.pred = predict(rf.model, actualTest)
+
+rf.pred[is.na(rf.pred)] = mean(na.omit(rf.pred))
+
+sum(is.na(rf.pred))
+
+SalePrice = cbind(Id = actualTest$Id, SalePrice = rf.pred)
+
+```
+
+The Kaggle Score for the submission above was 0.15446 with a rank at 1716. Lot's of room for improvement, and including the other factors didn't improve the model much. Let's rethink our strategy.
+
+
+
+Let's try using all the data that isn't completely missing. Here I'll write a little function to tell us how much of each row is complete. 
+```{r}
+
+percentComplete = function(data) {
+    1- colSums(apply(data, 2, is.na))/nrow(data)
+} 
+
+percentage = 1
+
+trainFull = train[percentComplete(train) >= percentage]
+actualTest = actualTest[,-1]
+actualTestFull = actualTest[(percentComplete(train) >= percentage)[-ncol(train)]]
+```
+
+
+Now let's run the model 
+```{r}
+# train = trainFull
+# test  = actualTestFull
+
+sapply(trainFull, levels) 
+
+
+
+rf.model = randomForest(formula = SalePrice ~ ., 
+                        data = trainFull[,-c(11,12)], na.action = na.omit)
+
+rf.model
+
+
+
+rf.pred = predict(rf.model, actualTestFull[,-c(11,12)])
+
+
+
+rf.pred[is.na(rf.pred)] = mean(na.omit(rf.pred))
+
+sum(is.na(rf.pred))
+
+SalePrice = cbind(Id = actualTest$Id, SalePrice = rf.pred)
+
+
+
+```
+
+
+
+
+
+
+
+
