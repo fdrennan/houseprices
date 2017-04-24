@@ -1,0 +1,143 @@
+---
+name: Freddy Drennan
+title: Predicting House Prices
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    theme: cerulean
+    highlight: haddock
+    fig_align: center
+---
+
+[__Train__]("http://fdrennan.net/pages/pages2/datasets/housetrain.csv")
+[__Test__]("http://fdrennan.net/pages/pages2/datasets/housetest.csv")
+
+
+<h1>
+Exploring the Data
+</h1>
+
+
+```{r, message = FALSE, warning = FALSE}
+library(ggplot2)
+library(ggthemes)
+library(tidyr)
+library(Amelia)
+library(caTools)
+```
+
+<h2>
+Importing the Data
+</h2>
+
+Use the `read.csv()` function to import the data labeled __Train__. 
+```{r}
+classes = data %>%
+     lapply(class) %>%
+     as.character()
+
+train = read.csv("train.csv")
+
+factorCols  = classes == "factor"
+numericCols = classes == "integer"
+factorCols = train[factorCols]
+numericCols = train[numericCols][,-1]
+# data = cbind(data[,numericCols], data[,factorCols])
+library(fdRen)
+factorCols = expandNum(factorCols, 1:ncol(factorCols))
+numericCols = expandNum(numericCols, 17:22)
+train = cbind(numericCols, factorCols)
+```
+
+
+```{r}
+train = train[fdRen::percentComplete(train) > .99]
+
+```
+
+```{r}
+library(caTools)
+data = train
+split = sample.split(train, SplitRatio = 0.7)
+train = subset(data, split == TRUE)
+test  = subset(data, split == FALSE)
+
+rf.model = randomForest(formula = SalePrice ~ ., data = na.omit(train))
+
+rf.pred = predict(rf.model, test)
+
+predictionDataFrame = data.frame(actual = test$SalePrice, predicted = rf.pred)
+
+
+ggplot(predictionDataFrame, aes(x = actual, y = predicted)) +
+     geom_point(cex = .05, colour = "light blue") +
+     theme_solarized(light = FALSE)+
+     xlab("Actual") +
+     ylab("Predicted") +
+     ggtitle("RF 1")
+```
+
+
+
+
+```{r}
+test = read.csv("test.csv")
+train = read.csv("train.csv")
+
+strClass = function(data) {
+     classes = data %>%
+     lapply(class) %>%
+     as.character()
+     factorCols  = classes == "factor"
+     numericCols = classes == "integer"
+     cbind(data[numericCols], data[factorCols])
+}
+
+percentComplete = function(data) {
+    1- colSums(apply(data, 2, is.na))/nrow(data)
+}
+SalePrice = train$SalePrice
+test = test[percentComplete(test) >= .99]
+
+test = strClass(test)
+train = strClass(train)
+train = train[names(test)]
+
+test = test[,-1]
+train = train[,-1]
+train$SalePrice = SalePrice
+
+train = fdRen::expandNum(train,c(15:18, 33:(ncol(train)-1)))
+test = fdRen::expandNum(test, c(15:18, 33:(ncol(test))))
+
+train = train[names(train)[names(train) %in% names(test)]]
+test = test[names(train)[names(train) %in% names(test)]]
+train$SalePrice = SalePrice
+```
+
+
+
+
+
+```{r}
+rf.model = randomForest(formula = SalePrice ~ ., data = na.omit(train))
+
+rf.pred = predict(rf.model, test)
+
+Id = 1:length(rf.pred)
+rf.pred[is.na(rf.pred)] = mean(rf.pred)
+prediction = rf.pred
+prediction[is.na(prediction)] = mean(rf.pred, na.rm = TRUE)
+predict = data.frame(Id = Id, SalePrice = prediction)
+write.csv(predict, "saleprice2.csv")
+```
+
+
+
+
+
+
+
